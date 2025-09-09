@@ -111,7 +111,7 @@ async def get_events(
 
     inner_joins, where, values = nostr_filter.to_sql_components(relay_id)
     query = f"""
-        SELECT * FROM nostrrelay.events
+        SELECT * FROM events
         {" ".join(inner_joins)}
         WHERE { " AND ".join(where)}
         ORDER BY created_at DESC
@@ -193,9 +193,20 @@ async def mark_events_deleted(relay_id: str, nostr_filter: NostrFilter):
 async def delete_events(relay_id: str, nostr_filter: NostrFilter):
     if nostr_filter.is_empty():
         return None
-    _, where, values = nostr_filter.to_sql_components(relay_id)
+    inner_joins, where, values = nostr_filter.to_sql_components(relay_id)
 
-    query = f"DELETE from nostrrelay.events WHERE {' AND '.join(where)}"
+    if inner_joins:
+        # Use subquery for DELETE operations with JOINs
+        subquery = f"""
+            SELECT events.id FROM events
+            {" ".join(inner_joins)}
+            WHERE {" AND ".join(where)}
+        """
+        query = f"DELETE FROM events WHERE id IN ({subquery})"
+    else:
+        # Simple DELETE without JOINs
+        query = f"DELETE FROM events WHERE {' AND '.join(where)}"
+    
     await db.execute(query, values)
     # todo: delete tags
 

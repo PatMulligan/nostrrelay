@@ -163,16 +163,16 @@ class NostrClientConnection:
             if e.is_addressable_event:
                 # Extract 'd' tag value for addressable replacement (NIP-01)
                 d_tag_value = next((t[1] for t in e.tags if t[0] == "d"), None)
+
                 if d_tag_value:
-                    await delete_events(
-                        self.relay_id,
-                        NostrFilter(
-                            kinds=[e.kind], 
-                            authors=[e.pubkey],
-                            d=[d_tag_value],
-                            until=e.created_at
-                        )
+                    deletion_filter = NostrFilter(
+                        kinds=[e.kind], 
+                        authors=[e.pubkey],
+                        **{"#d": [d_tag_value]},
+                        until=e.created_at
                     )
+                    
+                    await delete_events(self.relay_id, deletion_filter)
             if not e.is_ephemeral_event:
                 await create_event(e)
             await self._broadcast_event(e)
@@ -181,7 +181,6 @@ class NostrClientConnection:
                 await self._handle_delete_event(e)
             resp_nip20 += [True, ""]
         except Exception as ex:
-            logger.debug(ex)
             event = await get_event(self.relay_id, e.id)
             # todo: handle NIP20 in detail
             message = "error: failed to create event"

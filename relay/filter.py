@@ -71,33 +71,41 @@ class NostrFilter(BaseModel):
             self.limit = limit
 
     def to_sql_components(self, relay_id: str) -> tuple[list[str], list[str], dict]:
+        from loguru import logger
+        
         inner_joins: list[str] = []
-        where = ["deleted=false", "nostrrelay.events.relay_id = :relay_id"]
+        where = ["deleted=false", "events.relay_id = :relay_id"]
         values: dict = {"relay_id": relay_id}
+        
+        logger.info(f"[NOSTRRELAY DEBUG] Building SQL for filter: d={self.d}, kinds={self.kinds}, authors={self.authors}, until={self.until}")
 
         if len(self.e):
             e_s = ",".join([f"'{e}'" for e in self.e])
             inner_joins.append(
-                "INNER JOIN nostrrelay.event_tags e_tags "
-                "ON nostrrelay.events.id = e_tags.event_id"
+                "INNER JOIN event_tags e_tags "
+                "ON events.id = e_tags.event_id"
             )
             where.append(f" (e_tags.value in ({e_s}) AND e_tags.name = 'e')")
 
         if len(self.p):
             p_s = ",".join([f"'{p}'" for p in self.p])
             inner_joins.append(
-                "INNER JOIN nostrrelay.event_tags p_tags "
-                "ON nostrrelay.events.id = p_tags.event_id"
+                "INNER JOIN event_tags p_tags "
+                "ON events.id = p_tags.event_id"
             )
             where.append(f" p_tags.value in ({p_s}) AND p_tags.name = 'p'")
 
         if len(self.d):
             d_s = ",".join([f"'{d}'" for d in self.d])
-            inner_joins.append(
-                "INNER JOIN nostrrelay.event_tags d_tags "
-                "ON nostrrelay.events.id = d_tags.event_id"
-            )
-            where.append(f" d_tags.value in ({d_s}) AND d_tags.name = 'd'")
+            d_join = "INNER JOIN event_tags d_tags ON events.id = d_tags.event_id"
+            d_where = f" d_tags.value in ({d_s}) AND d_tags.name = 'd'"
+            
+            logger.info(f"[NOSTRRELAY DEBUG] Adding d tag filter: d_tags={self.d}")
+            logger.info(f"[NOSTRRELAY DEBUG] D tag JOIN: {d_join}")
+            logger.info(f"[NOSTRRELAY DEBUG] D tag WHERE: {d_where}")
+            
+            inner_joins.append(d_join)
+            where.append(d_where)
 
         if len(self.ids) != 0:
             ids = ",".join([f"'{_id}'" for _id in self.ids])
@@ -118,5 +126,15 @@ class NostrFilter(BaseModel):
         if self.until:
             where.append("created_at < :until")
             values["until"] = self.until
+
+        # Log the final SQL components
+        final_query = f"""
+        SELECT * FROM events
+        {" ".join(inner_joins)}
+        WHERE { " AND ".join(where)}
+        ORDER BY created_at DESC
+        """
+        logger.info(f"[NOSTRRELAY DEBUG] Final SQL query: {final_query}")
+        logger.info(f"[NOSTRRELAY DEBUG] SQL values: {values}")
 
         return inner_joins, where, values
